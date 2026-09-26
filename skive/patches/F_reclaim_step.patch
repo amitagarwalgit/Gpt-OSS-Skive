@@ -1,0 +1,29 @@
+--- a/v1/engine/core.py
++++ b/v1/engine/core.py
+@@ -469,6 +469,26 @@
+             scheduler_output, model_output
+         )
+ 
++        # SKIVE: reclaim (step) physical blocks evicted this step.
++        if getattr(self.vllm_config.cache_config, "kv_evict_enabled", False):
++            try:
++                from vllm.kv_evict.integration import (
++                    _skive_pop_pending,
++                    skive_reclaim,
++                )
++
++                _skive_pending = self.model_executor.collective_rpc(
++                    _skive_pop_pending, single_value=True
++                )
++                if _skive_pending:
++                    sched = self.scheduler
++                    skive_reclaim(
++                        sched.kv_cache_manager,  # type: ignore[attr-defined]
++                        _skive_pending,
++                    )
++            except Exception as _skive_e:
++                logger.warning("SKIVE reclaim error: %s", _skive_e)
++
+         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
+ 
+     def post_step(self, model_executed: bool) -> None:

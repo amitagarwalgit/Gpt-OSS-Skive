@@ -1,0 +1,16 @@
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
+@@ -118,6 +118,13 @@
+         self.vllm_config = vllm_config
+         self.model_config = vllm_config.model_config
+         self.cache_config = vllm_config.cache_config
++        # SKIVE: eviction is implemented only for the V1 model runner;
++        # fail loudly instead of silently no-op'ing on V2.
++        if getattr(self.cache_config, "kv_evict_enabled", False):
++            raise NotImplementedError(
++                "SKIVE KV eviction requires the V1 model runner. Set "
++                "VLLM_USE_V2_MODEL_RUNNER=0 (this model defaulted to V2)."
++            )
+         self.compilation_config = vllm_config.compilation_config
+         self.lora_config = vllm_config.lora_config
+         self.load_config = vllm_config.load_config

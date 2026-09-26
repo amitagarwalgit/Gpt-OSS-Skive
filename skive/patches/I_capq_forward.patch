@@ -1,0 +1,12 @@
+--- a/v1/attention/backends/flash_attn.py
++++ b/v1/attention/backends/flash_attn.py
+@@ -699,6 +699,9 @@
+             "FlashAttention version not detected."
+         )
+ 
++        # SKIVE: capture current query for value x attention eviction scoring.
++        if _SKIVE_CAPTURE_Q:
++            layer._skive_q = query.detach()
+         if output_scale is not None or output_block_scale is not None:
+             raise NotImplementedError(
+                 "fused output quantization is not yet supported for FlashAttentionImpl"

@@ -1,0 +1,13 @@
+--- a/engine/arg_utils.py
++++ b/engine/arg_utils.py
+@@ -1783,6 +1783,10 @@
+             num_gpu_blocks_override=self.num_gpu_blocks_override,
+             sliding_window=sliding_window,
+             enable_prefix_caching=self.enable_prefix_caching,
++            kv_evict_enabled=self.kv_evict_enabled,  # SKIVE:
++            kv_evict_budget=self.kv_evict_budget,
++            kv_evict_num_sink_blocks=self.kv_evict_num_sink_blocks,
++            kv_evict_num_local_blocks=self.kv_evict_num_local_blocks,
+             prefix_caching_hash_algo=self.prefix_caching_hash_algo,
+             calculate_kv_scales=self.calculate_kv_scales,
+             kv_cache_dtype_skip_layers=self.kv_cache_dtype_skip_layers,

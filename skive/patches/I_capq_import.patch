@@ -1,0 +1,10 @@
+--- a/v1/attention/backends/flash_attn.py
++++ b/v1/attention/backends/flash_attn.py
+@@ -3,6 +3,7 @@
+ """Attention layer with FlashAttention."""
+ 
+ import copy
++import os  # SKIVE: query capture for value_attention metric
+ from dataclasses import dataclass
+ from typing import ClassVar
+ 

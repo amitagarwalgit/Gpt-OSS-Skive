@@ -1,0 +1,12 @@
+--- a/v1/attention/backends/flash_attn.py
++++ b/v1/attention/backends/flash_attn.py
+@@ -64,6 +64,9 @@
+ from vllm.v1.kv_cache_interface import AttentionSpec
+ 
+ logger = init_logger(__name__)
++
++
++_SKIVE_CAPTURE_Q = os.environ.get("SKIVE_METRIC") in ("value_attention", "h2o", "snapkv")  # SKIVE:
+ 
+ 
+ class FlashAttentionBackend(AttentionBackend):

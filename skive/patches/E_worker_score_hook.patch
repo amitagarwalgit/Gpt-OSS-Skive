@@ -1,0 +1,19 @@
+--- a/v1/worker/gpu_model_runner.py
++++ b/v1/worker/gpu_model_runner.py
+@@ -4583,6 +4583,16 @@
+                 routed_experts=None,
+             )
+ 
++        # SKIVE: stable post-decode KV-eviction hook. Flag-gated; off (or
++        # an unset/invalid budget) => skive_post_step is a no-op => stock.
++        if self.cache_config.kv_evict_enabled:
++            try:
++                from vllm.kv_evict.integration import skive_post_step
++
++                skive_post_step(self)
++            except Exception as _skive_e:
++                logger.warning("SKIVE post-step hook error: %s", _skive_e)
++
+         if not self.use_async_scheduling:
+             if self.routed_experts_initialized:
+                 # Sync path: D2H was issued in ``_bookkeeping_sync`` and

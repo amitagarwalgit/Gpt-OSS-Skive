@@ -1,0 +1,13 @@
+--- a/engine/arg_utils.py
++++ b/engine/arg_utils.py
+@@ -503,6 +503,10 @@
+     )
+     block_size: int | None = None
+     enable_prefix_caching: bool | None = None
++    kv_evict_enabled: bool = CacheConfig.kv_evict_enabled  # SKIVE:
++    kv_evict_budget: int | None = CacheConfig.kv_evict_budget
++    kv_evict_num_sink_blocks: int = CacheConfig.kv_evict_num_sink_blocks
++    kv_evict_num_local_blocks: int = CacheConfig.kv_evict_num_local_blocks
+     prefix_caching_hash_algo: PrefixCachingHashAlgo = (
+         CacheConfig.prefix_caching_hash_algo
+     )

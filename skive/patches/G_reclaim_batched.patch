@@ -1,0 +1,29 @@
+--- a/v1/engine/core.py
++++ b/v1/engine/core.py
+@@ -615,6 +615,26 @@
+             future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+             batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
+ 
++        # SKIVE: reclaim (batched) physical blocks evicted this step.
++        if getattr(self.vllm_config.cache_config, "kv_evict_enabled", False):
++            try:
++                from vllm.kv_evict.integration import (
++                    _skive_pop_pending,
++                    skive_reclaim,
++                )
++
++                _skive_pending = self.model_executor.collective_rpc(
++                    _skive_pop_pending, single_value=True
++                )
++                if _skive_pending:
++                    sched = self.scheduler
++                    skive_reclaim(
++                        sched.kv_cache_manager,  # type: ignore[attr-defined]
++                        _skive_pending,
++                    )
++            except Exception as _skive_e:
++                logger.warning("SKIVE reclaim error: %s", _skive_e)
++
+         return engine_core_outputs, model_executed
+ 
+     def _process_aborts_queue(self):

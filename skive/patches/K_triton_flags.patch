@@ -1,0 +1,23 @@
+--- a/v1/attention/backends/triton_attn.py
++++ b/v1/attention/backends/triton_attn.py
+@@ -125,6 +125,20 @@
+         return padded.view(num_seqs, max_ranges, 2)
+ 
+ 
++_SKIVE_CAPTURE_Q = os.environ.get("SKIVE_METRIC") in ("value_attention", "h2o", "snapkv")  # SKIVE:
++_SKIVE_SPARSE = os.environ.get("SKIVE_SPARSE_GATHER", "1") == "1"  # SKIVE: sparse-gather
++
++
++def _skive_can_compact(kv_cache_spec) -> bool:  # SKIVE: multi-group (gpt-oss)
++    """Only the full-attention KV group may be sparse-gathered (see the
++    identical helper in flash_attn.py)."""
++    from vllm.v1.kv_cache_interface import SlidingWindowSpec
++
++    if isinstance(kv_cache_spec, SlidingWindowSpec):
++        return False
++    return getattr(kv_cache_spec, "sliding_window", None) is None
++
++
+ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMetadata]):
+     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.ALWAYS
+ 

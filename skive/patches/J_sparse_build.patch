@@ -1,0 +1,22 @@
+--- a/v1/attention/backends/flash_attn.py
++++ b/v1/attention/backends/flash_attn.py
+@@ -422,6 +422,19 @@
+         block_table_tensor = common_attn_metadata.block_table_tensor
+         slot_mapping = common_attn_metadata.slot_mapping
+         causal = common_attn_metadata.causal
++
++        # SKIVE: sparse-gather -- drop evicted (null) blocks from the read so
++        # FlashAttention skips them (fewer FLOPs + memory, no zero-key
++        # dilution). Pure-decode rows only; RoPE is unaffected (positions come
++        # from the model's positions tensor, not the gather list).
++        if (_SKIVE_SPARSE and getattr(self.cache_config, "kv_evict_enabled", False)
++                and _skive_can_compact(self.kv_cache_spec)):
++            from vllm.kv_evict.compaction import compact_block_table_torch
++
++            _q_lens = query_start_loc[1 : num_reqs + 1] - query_start_loc[:num_reqs]
++            block_table_tensor, seq_lens = compact_block_table_torch(
++                block_table_tensor, seq_lens, self.block_size, query_lens=_q_lens
++            )
+ 
+         # Disable AOT schedule for spec-decode proposer (not worth the overhead)
+         # and for batch invariance (schedule varies with max_seqlen_q/k).

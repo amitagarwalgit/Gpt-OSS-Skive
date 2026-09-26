@@ -1,0 +1,26 @@
+--- a/v1/attention/backends/triton_attn.py
++++ b/v1/attention/backends/triton_attn.py
+@@ -239,6 +239,23 @@
+         block_table_tensor = common_attn_metadata.block_table_tensor
+         slot_mapping = common_attn_metadata.slot_mapping
+ 
++        # SKIVE: sparse-gather -- drop evicted (null) blocks from the read so the
++        # Triton unified kernel skips them (same contract as FlashAttention:
++        # gather list + seqused_k). Pure-decode rows only; positions/RoPE are
++        # untouched. Skipped under full CUDA-graph decode capture, where the
++        # metadata tensors must stay the persistent buffers (enforce_eager or
++        # piecewise graphs are fine).
++        if (_SKIVE_SPARSE and getattr(self.vllm_config.cache_config, "kv_evict_enabled", False)
++                and not self.decode_cudagraph_enabled
++                and _skive_can_compact(self.kv_cache_spec)):
++            from vllm.kv_evict.compaction import compact_block_table_torch
++
++            _n = common_attn_metadata.num_reqs
++            _q_lens = query_start_loc[1 : _n + 1] - query_start_loc[:_n]
++            block_table_tensor, seq_lens = compact_block_table_torch(
++                block_table_tensor, seq_lens, self.block_size, query_lens=_q_lens
++            )
++
+         use_cascade = common_prefix_len > 0
+ 
+         if use_cascade:

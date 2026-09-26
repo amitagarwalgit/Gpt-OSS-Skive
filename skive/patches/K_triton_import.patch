@@ -1,0 +1,10 @@
+--- a/v1/attention/backends/triton_attn.py
++++ b/v1/attention/backends/triton_attn.py
+@@ -2,6 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """High-Performance Triton-only Attention layer."""
+ 
++import os  # SKIVE: query capture / sparse-gather flags
+ from dataclasses import dataclass
+ from typing import ClassVar
+ 

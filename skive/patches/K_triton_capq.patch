@@ -1,0 +1,12 @@
+--- a/v1/attention/backends/triton_attn.py
++++ b/v1/attention/backends/triton_attn.py
+@@ -575,6 +575,9 @@
+         Returns:
+             shape = [num_tokens, num_heads * head_size]
+         """
++        # SKIVE: capture current query for value x attention eviction scoring.
++        if _SKIVE_CAPTURE_Q:
++            layer._skive_q = query.detach()
+         if output_block_scale is not None:
+             raise NotImplementedError(
+                 "fused block_scale output quantization is not yet supported"

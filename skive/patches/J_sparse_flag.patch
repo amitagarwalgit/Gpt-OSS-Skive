@@ -1,0 +1,23 @@
+--- a/v1/attention/backends/flash_attn.py
++++ b/v1/attention/backends/flash_attn.py
+@@ -67,6 +67,20 @@
+ 
+ 
+ _SKIVE_CAPTURE_Q = os.environ.get("SKIVE_METRIC") in ("value_attention", "h2o", "snapkv")  # SKIVE:
++_SKIVE_SPARSE = os.environ.get("SKIVE_SPARSE_GATHER", "1") == "1"  # SKIVE: sparse-gather
++
++
++def _skive_can_compact(kv_cache_spec) -> bool:  # SKIVE: multi-group (gpt-oss)
++    """Only the full-attention KV group may be sparse-gathered. Sliding-window
++    groups (gpt-oss even layers) already hold vLLM's own null blocks for
++    out-of-window tokens and compacting them would shift the window; a
++    FullAttentionSpec carrying a sliding_window (non-hybrid allocator) is a
++    table shared with sliding-window layers, so it is skipped too."""
++    from vllm.v1.kv_cache_interface import SlidingWindowSpec
++
++    if isinstance(kv_cache_spec, SlidingWindowSpec):
++        return False
++    return getattr(kv_cache_spec, "sliding_window", None) is None
+ 
+ 
+ class FlashAttentionBackend(AttentionBackend):

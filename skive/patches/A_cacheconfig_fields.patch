@@ -1,0 +1,19 @@
+--- a/config/cache.py
++++ b/config/cache.py
+@@ -91,6 +91,16 @@
+     `ModelConfig` and that value should be manually duplicated here."""
+     enable_prefix_caching: bool = True
+     """Whether to enable prefix caching."""
++    kv_evict_enabled: bool = False
++    """SKIVE: enable value-aware block-wise KV-cache eviction. Default
++    False; when False, behavior is identical to stock vLLM."""
++    kv_evict_budget: int | None = None
++    """SKIVE: max KV blocks retained per sequence before eviction fires.
++    None disables eviction even if kv_evict_enabled is True."""
++    kv_evict_num_sink_blocks: int = 0
++    """SKIVE: number of leading (attention-sink) blocks never evicted."""
++    kv_evict_num_local_blocks: int = 0
++    """SKIVE: number of trailing (recent/local) blocks never evicted."""
+     prefix_caching_hash_algo: PrefixCachingHashAlgo = "sha256"
+     """Set the hash algorithm for prefix caching:
+ 
