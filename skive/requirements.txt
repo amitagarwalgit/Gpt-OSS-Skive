@@ -1,6 +1,6 @@
 # Evaluation extras for the SKIVE scripts (vLLM 0.23.0 itself is pinned by skive/install.sh).
 numpy
-scipy>=1.13
+scipy>=1.15.3
 datasets
 huggingface_hub
 rouge-score
