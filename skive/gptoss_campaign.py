@@ -37,7 +37,7 @@ import zipfile
 
 # ---- argv is parsed (in main) BEFORE importing vllm: SKIVE_METRIC must be in the env first
 ap = argparse.ArgumentParser()
-ap.add_argument("cmd", choices=["run", "judge", "tables", "csv"])
+ap.add_argument("cmd", choices=["run", "judge", "tables", "csv", "compare"])
 ap.add_argument("--dataset", default=None)
 ap.add_argument("--config", default="fullkv")
 ap.add_argument("--n", type=int, default=int(os.environ.get("N", "100")))
@@ -71,11 +71,13 @@ SEED = int(os.environ.get("SEED", "0"))
 BLOCK = int(os.environ.get("BLOCK_SIZE", "16"))   # vLLM block_size (budgets are given in tokens)
 
 DEFAULT_MAXTOK = {"gov_report": 512, "multi_news": 512, "longalpaca": 512, "hotpotqa": 256,
-                  "gsm8k": 1024, "aime24": 8192}
+                  "narrativeqa": 128, "gsm8k": 1024, "aime24": 8192}
 ACC_NAME = {"gov_report": "ROUGE-L", "multi_news": "ROUGE-L", "longalpaca": "token-F1",
-            "hotpotqa": "token-F1", "gsm8k": "exact match", "aime24": "pass rate"}
+            "hotpotqa": "token-F1", "narrativeqa": "token-F1", "gsm8k": "exact match",
+            "aime24": "pass rate"}
 KIND = {"gov_report": "Summarization", "multi_news": "Summarization",
         "longalpaca": "Long-context QA", "hotpotqa": "Multi-hop long-context QA",
+        "narrativeqa": "Long-document QA (30k-token stories)",
         "gsm8k": "Math reasoning", "aime24": "Math reasoning"}
 
 
@@ -120,6 +122,11 @@ LONGBENCH_PROMPT = {
                  "and do not output any other words.\n\nThe following are given passages.\n"
                  "{context}\n\nAnswer the question based on the given passages. Only give me "
                  "the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:"),
+    "narrativeqa": ("You are given a story, which can be either a novel or a movie script, and "
+                    "a question. Answer the question as concisely as you can, based on the "
+                    "story.\n\nStory: {context}\n\nNow, answer the question based on the story "
+                    "as concisely as you can, using a single phrase if possible. Do not provide "
+                    "any explanation.\n\nQuestion: {input}\n\nAnswer:"),
 }
 
 
@@ -258,7 +265,7 @@ def score_items(name, items, preds):
         if name in ("gov_report", "multi_news"):
             s = scorer.score(it["ref"], ps[0])
             accs.append(100 * s["rougeL"].fmeasure); r2s.append(s["rouge2"].fmeasure)
-        elif name == "hotpotqa":   # LongBench: best F1 over the reference answers
+        elif name in ("hotpotqa", "narrativeqa"):   # LongBench: best F1 over the reference answers
             refs = it.get("refs") or [it["ref"]]
             accs.append(100 * max(token_f1(ps[0], r) for r in refs))
         elif name == "longalpaca":
@@ -538,6 +545,51 @@ def cmd_csv():
 
 
 # ---------------------------------------------------------------------------
+# compare: the "budget x {vk, va}" side-by-side table (one line per budget)
+# ---------------------------------------------------------------------------
+def cmd_compare():
+    name = ARGS.dataset
+    files = sorted(glob.glob(os.path.join(ARGS.out, f"{name}__*.json")))
+    if not files:
+        sys.exit(f"no results for {name} in {ARGS.out}")
+    rows = [json.load(open(f)) for f in files]
+    for r in rows:
+        r.pop("outputs", None)
+    base = next((r for r in rows if r["config"] == "fullkv"), None) or \
+        next((r for r in rows if r["config"].startswith("fullkv")), rows[0])
+    tag = ARGS.tag  # "" -> untagged rows; "best" -> the +best rows, etc.
+    by = {}
+    for r in rows:
+        bc = r.get("base_config") or r["config"].split("+")[0]
+        rt = r.get("tag") or ""
+        if bc.startswith(("vk@", "va@")) and rt == tag:
+            by[(bc[:2], r["budget_tok"])] = r
+    budgets = sorted({b for (_, b) in by})
+    d = lambda r, k, base_k=None: (r[k], r[k] - base[base_k or k])
+    print(f"## {name}: vk_ratio vs value_attention by budget" + (f" (variant: {tag})" if tag else "") + "\n")
+    print(f"{KIND[name]}, {ACC_NAME[name]}. FullKV acc {base['acc']:.2f}. n={base['n']} prompts. "
+          f"Deltas vs FullKV ({base['config']}).\n")
+    print("| Budget | cross% | vk acc (d) | va acc (d) | vk ttft (s) | va ttft (s) | vk e2e (s) | va e2e (s) "
+          "| vk wall (s) | va wall (s) | KV saved |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    for r in [x for x in rows if x["config"].startswith("fullkv")]:
+        print(f"| {r['config'].replace('fullkv', 'FullKV').replace('+', ' ')} | 0% | {r['acc']:.2f} | {r['acc']:.2f} "
+              f"| {r['ttft_s']:.0f} | {r['ttft_s']:.0f} | {r['e2e_s']:.0f} | {r['e2e_s']:.0f} "
+              f"| {r['wall_s']:.0f} | {r['wall_s']:.0f} | - |")
+    for b in budgets:
+        vk, va = by.get(("vk", b)), by.get(("va", b))
+        cell = lambda r, k, nd, pct: "-" if r is None else (
+            f"{r[k]:.{nd}f} ({100 * (r[k] - base[k]) / base[k]:+.0f}%)" if pct else f"{r[k]:.{nd}f} ({r[k] - base[k]:+.{nd}f})")
+        cross = next((r["cross_pct"] for r in (va, vk) if r is not None and r["cross_pct"] is not None), None)
+        kv = next((r["kv_saved_pct"] for r in (va, vk) if r is not None), None)
+        print(f"| {b:,} | {'-' if cross is None else f'{min(100, cross):.0f}%'} | {cell(vk, 'acc', 1, False)} | "
+              f"{cell(va, 'acc', 1, False)} | {cell(vk, 'ttft_s', 0, True)} | {cell(va, 'ttft_s', 0, True)} | "
+              f"{cell(vk, 'e2e_s', 0, True)} | {cell(va, 'e2e_s', 0, True)} | {cell(vk, 'wall_s', 0, True)} | "
+              f"{cell(va, 'wall_s', 0, True)} | {'-' if kv is None else f'{kv:.0f}%'} |")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # tables (markdown, the slide layout)
 # ---------------------------------------------------------------------------
 def _f(x, nd=1):
@@ -651,11 +703,12 @@ def main():
             sys.exit("run needs --dataset")
         CFG = parse_config(ARGS.config)
         apply_config_env(CFG)
-    elif ARGS.cmd in ("judge", "csv"):
+    elif ARGS.cmd in ("judge", "csv", "compare"):
         if not ARGS.dataset:
             sys.exit(f"{ARGS.cmd} needs --dataset")
         apply_config_env(None)
-    {"run": cmd_run, "judge": cmd_judge, "tables": cmd_tables, "csv": cmd_csv}[ARGS.cmd]()
+    {"run": cmd_run, "judge": cmd_judge, "tables": cmd_tables, "csv": cmd_csv,
+     "compare": cmd_compare}[ARGS.cmd]()
 
 
 if __name__ == "__main__":
