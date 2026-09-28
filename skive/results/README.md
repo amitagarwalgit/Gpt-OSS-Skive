@@ -9,3 +9,7 @@ Each directory holds one JSON per configuration (metrics plus every generated an
 | `aime24/new_run/` | Created by `scripts/run_aime24.sh` when you run it. |
 
 Configuration names: `fullkv` (no eviction), `vk@N` / `va@N` (vk_ratio / value_attention with an N-token budget); the suffix after `+` lists the variant knobs. Every JSON records the exact knob values under `knobs`. `docs/GPTOSS_AIME24_EXPLAINED.md` walks through all of it.
+
+# GSM8K results (same model and GPU)
+
+`gsm8k/grid/` holds one slim JSON per configuration (metrics and knobs; the generated answers are in `gsm8k_answers.csv.gz`, one row per problem per configuration, 93,649 rows) and `TABLES.md`: the budget x {vk_ratio, value_attention} comparison tables (one per lever variant) followed by the full per-configuration table. 71 configurations: FullKV eager / graphs / FP8; for each metric and each of the budgets 256, 512 and 1024 the plain run plus seven levers (`skive/run_gsm8k_grid.sh`); for budgets 384, 640 and 768 the three levers that matter, `pp`, `pp_e64`, `pp_traj_red` (`skive/run_gsm8k_ladder.sh`). Write-up: `docs/GPTOSS_GSM8K_RESULTS.md`.
