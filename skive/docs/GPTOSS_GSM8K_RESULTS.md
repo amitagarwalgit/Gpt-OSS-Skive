@@ -1,6 +1,6 @@
 # SKIVE on gpt-oss-20b: GSM8K, full test set, every lever on both metrics
 
-Campaign run on 2026-09-28 on one NVIDIA L40S (48 GB). All 1,319 GSM8K test problems in every configuration; 71 configurations: FullKV three ways; for each of the two SKIVE metrics and each of the budgets 256, 512 and 1024, the plain run plus seven levers; and, to fill in the budget ladder, budgets 384, 640 and 768 with the three levers that matter (prompt protected, plus slow cadence, plus trajectory and redundancy). Every generated answer is in `skive/results/gsm8k/grid/gsm8k_answers.csv.gz` (one row per problem per configuration: question, reference, gold, answer, correct or not, generated tokens; 93,649 rows).
+Campaign run on 2026-09-28 on one NVIDIA L40S (48 GB). All 1,319 GSM8K test problems in every configuration; 87 configurations: FullKV three ways; for each of the two SKIVE metrics and each of the budgets 256, 512 and 1024, the plain run plus seven levers; to fill in the budget ladder, budgets 384, 640 and 768 with the three levers that matter (prompt protected, plus slow cadence, plus trajectory and redundancy); and the nine slide budgets 1,024 to 16,384, prompt protected, for comparison with the other datasets. Every generated answer is in `skive/results/gsm8k/grid/gsm8k_answers.csv.gz` (one row per problem per configuration: question, reference, gold, answer, correct or not, generated tokens; 114,753 rows).
 
 ## Setup
 
@@ -10,7 +10,7 @@ Campaign run on 2026-09-28 on one NVIDIA L40S (48 GB). All 1,319 GSM8K test prob
 | generation | greedy (temperature 0), reasoning_effort=medium, up to 2,048 output tokens; the answer is the last number in the harmony `final` channel, compared numerically with the reference |
 | prompts | the GSM8K question plus "Please reason step by step and put your final answer after '####'."; about 100 to 200 tokens |
 | traces | about 450 generated tokens on average under FullKV, so a request's cache is 550 to 650 tokens: a 1024 budget evicts on 8 to 10 percent of requests, 768 on 17, 640 on 26, 512 on about 42, 384 on 71, 256 on all of them |
-| statistics | one problem is 0.08 points; FullKV eager vs graphs differ by 0.2 from run-to-run noise; treat differences under about 0.7 as noise |
+| statistics | one problem is 0.08 points; FullKV eager vs graphs differ by 0.2 from run-to-run noise; the no-eviction rows at 3,072 and above (see the slide-budget section) spread from 91.9 to 93.3, so treat differences under about 1 point as noise |
 | metrics | `vk` = vk_ratio (static, cached per block), `va` = value_attention (query-dependent) |
 | levers (suffixes) | `plain`: fixed 2-block sink, nothing else; `pp`: prompt protected (sink = prompt blocks + 1); `traj`: 16-query trajectory window; `red`: redundancy penalty 0.3; `fp8`: FP8 KV cache; `e64`: evict every 64 steps (margin 16) instead of every 16; `blk64`: 64-token blocks. All rows use piecewise CUDA graphs and a 128-token local window (8 blocks at size 16; 4 blocks at the 256 budget so the window fits inside the budget; 2 blocks at size 64) |
 | columns | dAcc vs FullKV with graphs; cross% = requests that evicted at least one block; evict rate = cache tokens evicted per generated token; KV saved = evicted tokens over all tokens; rep4g = repeated 4-gram fraction; ttft, tpot, e2e = vLLM per-request stats; wall = batch wall time for all 1,319 problems; gen = mean generated tokens |
@@ -100,6 +100,27 @@ Fixed 2-block sink, for reference: what every SKIVE row looked like before promp
 | 1,024 | 9% | 93.2 (+0.1) | 92.6 (-0.5) | 27 (-2%) | 28 (+0%) | 41 (-0%) | 43 (+3%) | 106 (+2%) | 111 (+6%) | 9% |
 
 Reading across the four tables: at every budget below 1024, value_attention is the better metric, and the lever that helps depends on where the budget sits relative to the trace length (about 450 generated tokens plus a 100 to 200-token prompt). Above the trace length (640 and up) the plain prompt-protected row is already lossless and nothing else is needed. Around the trace length (512) the trajectory window and redundancy penalty add half a point. Below it (384 and 256) only slow cadence helps, and it also removes the latency overhead (at 384, e2e 42 s vs 41 s for FullKV, against 46 s for the base row).
+
+<!-- pagebreak -->
+
+## The slide budgets (1,024 to 16,384): the no-eviction rows and the noise band
+
+For a like-for-like comparison with the NarrativeQA and HotpotQA slides, the same nine budgets were run on GSM8K (prompt protected, both metrics). A GSM8K request is a 100 to 200-token prompt plus a trace capped at 2,048 tokens, so from 3,072 up no request can cross its budget and nothing is evicted; those rows are FullKV plus run-to-run noise. They calibrate the noise: with zero eviction, accuracy still ranges from 91.9 to 93.3 (batched greedy decoding on this stack is not bit-reproducible, and a different batch composition changes a few answers), so differences under about one point anywhere in this document should be read as noise, a wider band than the 0.7 stated in Setup. ttft and e2e are flat; the +4 to 5 percent on the value_attention side is the cost of the scoring hook with no eviction to pay it back.
+
+| Budget | cross% | vk acc (d) | va acc (d) | vk ttft (s) | va ttft (s) | vk e2e (s) | va e2e (s) | vk wall (s) | va wall (s) | KV saved |
+|---|---|---|---|---|---|---|---|---|---|---|
+| FullKV cg | 0% | 93.10 | 93.10 | 28 | 28 | 41 | 41 | 104 | 104 | - |
+| FullKV cg_fp8 | 0% | 92.27 | 92.27 | 27 | 27 | 41 | 41 | 104 | 104 | - |
+| FullKV eager | 0% | 92.87 | 92.87 | 35 | 35 | 53 | 53 | 153 | 153 | - |
+| 1,024 | 8% | 92.6 (-0.5) | 93.6 (+0.5) | 27 (-2%) | 28 (+1%) | 41 (-0%) | 42 (+2%) | 106 (+2%) | 108 (+4%) | 8% |
+| 2,048 | 2% | 92.9 (-0.2) | 93.1 (+0.0) | 27 (-2%) | 29 (+4%) | 41 (-1%) | 43 (+4%) | 106 (+2%) | 109 (+5%) | 1% |
+| 3,072 | 0% | 92.9 (-0.2) | 93.2 (+0.1) | 27 (-2%) | 29 (+4%) | 41 (-1%) | 43 (+4%) | 106 (+2%) | 109 (+5%) | 0% |
+| 4,096 | 0% | 92.5 (-0.6) | 91.9 (-1.2) | 27 (-1%) | 29 (+5%) | 42 (+0%) | 44 (+5%) | 105 (+1%) | 113 (+8%) | 0% |
+| 6,144 | 0% | 92.6 (-0.5) | 93.3 (+0.2) | 27 (-1%) | 29 (+5%) | 42 (+0%) | 43 (+4%) | 106 (+1%) | 108 (+4%) | 0% |
+| 8,192 | 0% | 93.3 (+0.2) | 92.8 (-0.3) | 27 (-2%) | 29 (+4%) | 41 (+0%) | 43 (+4%) | 105 (+1%) | 109 (+5%) | 0% |
+| 11,264 | 0% | 93.0 (-0.1) | 92.9 (-0.2) | 27 (-2%) | 29 (+4%) | 41 (-1%) | 43 (+4%) | 105 (+1%) | 110 (+6%) | 0% |
+| 13,664 | 0% | 93.1 (+0.0) | 92.9 (-0.2) | 27 (-1%) | 29 (+4%) | 41 (-0%) | 43 (+4%) | 105 (+1%) | 110 (+6%) | 0% |
+| 16,384 | 0% | 93.0 (-0.1) | 92.9 (-0.2) | 27 (-3%) | 29 (+5%) | 41 (-1%) | 43 (+5%) | 105 (+1%) | 112 (+7%) | 0% |
 
 <!-- pagebreak -->
 
