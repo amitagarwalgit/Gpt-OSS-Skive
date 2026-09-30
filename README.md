@@ -26,6 +26,23 @@ bash skive/run_aime24.sh                 # 30 problems x 8 samples, FullKV vs SK
 
 The installer takes the fast path: the official wheel supplies the compiled kernels and this tree supplies the Python. SKIVE is pure Python, so the result is exactly this fork. To build the whole fork from source instead (CUDA toolkit, about an hour), follow `README.vllm.md` (`pip install -e .`) and run the same scripts.
 
+## Run GSM8K
+
+Same setup, then paste this block as one command from the repo root (venv activated). It runs FullKV with CUDA graphs, then SKIVE value_attention at 1024 / 512 / 256-token budgets and vk_ratio at 512, all prompt protected, medium reasoning, greedy, on the full 1,319-problem test set (about an hour on an L40S), and ends with the results table and a CSV of every generated answer.
+
+```bash
+N=1319; OUT=$PWD/skive/results/gsm8k/new_run; BIN=$PWD/skive/gptoss_campaign.py; mkdir -p $OUT/logs
+export VLLM_USE_V2_MODEL_RUNNER=0 VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_ALLOW_INSECURE_SERIALIZATION=1 TOKENIZERS_PARALLELISM=false
+cd /tmp && for c in "fullkv cg 8" "va@1024 pp 8" "va@512 pp 8" "va@256 pp 4" "vk@512 pp 8"; do set -- $c
+  echo "--- gsm8k $1+$2 ($(date +%H:%M)) ---"
+  env REASONING=medium MAXTOK=2048 MINILM=0 CUDAGRAPH=piecewise SKIVE_PROTECT_PROMPT=1 LOCAL=$3 python $BIN run --dataset gsm8k --config $1 --n $N --tag $2 --out $OUT > $OUT/logs/gsm8k__$1+$2.log 2>&1
+  grep -E "^RESULT|Traceback" $OUT/logs/gsm8k__$1+$2.log | cut -c1-160 | tail -1
+done
+python $BIN csv --dataset gsm8k --out $OUT && python $BIN tables --out $OUT | tee $OUT/TABLES.md
+```
+
+`N=20` instead of `N=1319` is the ten-minute check. Results: `skive/results/gsm8k/new_run/TABLES.md`, `gsm8k_answers.csv` (one row per problem per configuration), one JSON per configuration, logs in `logs/`. The run is started from `/tmp` on purpose: inside the repo, `import vllm` would resolve to the source tree, which has no compiled kernels. Measured on an L40S: FullKV 93.10; SKIVE value_attention at 512 tokens 93.03 with 26 percent of the KV cache reclaimed; at 1024, 93.56; at 256, 77.2; vk_ratio at 512, 92.0.
+
 ## Results: AIME 2024, gpt-oss-20b, NVIDIA L40S 48 GB
 
 All 30 problems, 8 samples each (240 concurrent requests), medium reasoning effort, up to 16,384 output tokens per sample, piecewise CUDA graphs. Pass rate is the fraction of samples with the correct boxed integer; one sample is 0.4 points, so differences under about 2.5 points are noise. "evict rate" is cache tokens evicted per generated token; "KV saved" is evicted tokens over all tokens. SKIVE rows use value_attention with the prompt protected and a 32-block local window.
